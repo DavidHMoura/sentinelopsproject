@@ -37,11 +37,14 @@ async fn main() -> std::io::Result<()> {
             .app_data(db_pool.clone())
             .app_data(detection_engine.clone())
             .app_data(async_ingestor.clone())
+            .app_data(detection_engine.clone())
+            .app_data(async_ingestor.clone())
             .wrap(middleware::ApiKeyAuth::new(app_config.api_keys.clone()))
             .service(
                 web::scope("/api")
-                    .service(api::ingest_handler)
+                    .service(api::ingest_event)
                     .service(api::list_events)
+                    .service(api::list_alerts)
             )
     })
     .bind((config.server_host, config.server_port))?

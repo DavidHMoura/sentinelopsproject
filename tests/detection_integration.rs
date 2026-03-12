@@ -4,9 +4,11 @@ use uuid::Uuid;
 
 fn test_config() -> Config {
     Config {
-        database_url: "postgres://sentinelops:sentinelops@localhost:5432/sentinelops".to_string(),
+        database_url: "postgres://testuser:testpass@localhost:5432/testdb".to_string(),
         auth_max_attempts: 3,
         auth_window_seconds: 300,
+        port_scan_max_ports: 20,
+        port_scan_window_seconds: 10,
         api_keys: vec!["test-key".to_string()],
         server_host: "127.0.0.1".to_string(),
         server_port: 8000,

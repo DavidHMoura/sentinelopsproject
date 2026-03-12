@@ -6,6 +6,8 @@ pub struct Config {
     pub database_url: String,
     pub auth_max_attempts: i64,
     pub auth_window_seconds: i64,
+    pub port_scan_max_ports: i64,
+    pub port_scan_window_seconds: i64,
     pub api_keys: Vec<String>,
     pub server_host: String,
     pub server_port: u16,
@@ -18,7 +20,7 @@ impl Config {
         let database_url = env::var("DATABASE_URL")
             .unwrap_or_else(|_| {
                 tracing::warn!("DATABASE_URL not set, using default");
-                "postgres://sentinelops:sentinelops@localhost:5432/sentinelops".to_string()
+               "postgres://testuser:testpass@localhost:5432/testdb".to_string()
             });
 
         let auth_max_attempts = env::var("AUTH_MAX_ATTEMPTS")
@@ -33,6 +35,20 @@ impl Config {
             .parse()
             .map_err(|e| {
                 SentinelError::ConfigError(format!("Invalid AUTH_WINDOW_SECONDS: {}", e))
+            })?;
+
+        let port_scan_max_ports = env::var("PORT_SCAN_MAX_PORTS")
+            .unwrap_or_else(|_| "20".to_string())
+            .parse()
+            .map_err(|e| {
+                SentinelError::ConfigError(format!("Invalid PORT_SCAN_MAX_PORTS: {}", e))
+            })?;
+
+        let port_scan_window_seconds = env::var("PORT_SCAN_WINDOW_SECONDS")
+            .unwrap_or_else(|_| "10".to_string())
+            .parse()
+            .map_err(|e| {
+                SentinelError::ConfigError(format!("Invalid PORT_SCAN_WINDOW_SECONDS: {}", e))
             })?;
 
         let api_keys_str = env::var("API_KEYS").map_err(|_| {
@@ -71,6 +87,8 @@ impl Config {
             database_url,
             auth_max_attempts,
             auth_window_seconds,
+            port_scan_max_ports,
+            port_scan_window_seconds,
             api_keys,
             server_host,
             server_port,
@@ -109,5 +127,6 @@ mod tests {
         let config = result.unwrap();
         assert_eq!(config.api_keys.len(), 3);
         assert_eq!(config.api_keys[0], "key1");
+        assert_eq!(config.port_scan_max_ports, 20);
     }
 }

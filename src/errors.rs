@@ -2,6 +2,7 @@ use actix_web::{error::ResponseError, http::StatusCode, HttpResponse};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum SentinelError {
     #[error("Database error: {0}")]
     DatabaseError(#[from] sqlx::Error),

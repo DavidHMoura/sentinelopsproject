@@ -1,5 +1,5 @@
+use crate::models::{EventIn, Event, Alert};
 use actix_web::{get, post, web, HttpResponse};
-use crate::models::{EventIn, Event};
 use crate::detection::DetectionEngine;
 use crate::ingestor::AsyncIngestor;
 use crate::config::Config;
@@ -8,7 +8,7 @@ use validator::Validate;
 use sqlx::PgPool;
 
 #[post("/events/ingest")]
-pub async fn ingest_handler(
+pub async fn ingest_event(
     payload: web::Json<EventIn>,
     engine: web::Data<DetectionEngine>,
     ingestor: web::Data<AsyncIngestor>,
@@ -21,8 +21,8 @@ pub async fn ingest_handler(
 
     let event = Event::from_input(payload.into_inner());
 
-    if let Some(alert) = engine.evaluate(&config, &event).await? {
-        crate::db::save_alert(&pool, &alert).await?;
+    if let Some(alert) = engine.evaluate(config.get_ref(), &event).await? {
+        crate::db::save_alert(pool.get_ref(), &alert).await?;
         tracing::warn!(alert_id = %alert.id, "Security anomaly detected");
     }
 
@@ -39,4 +39,14 @@ pub async fn list_events(
         .fetch_all(pool.get_ref())
         .await?;
     Ok(HttpResponse::Ok().json(events))
+}
+
+#[get("/alerts")]
+pub async fn list_alerts(
+    pool: web::Data<PgPool>,
+) -> SentinelResult<HttpResponse> {
+    let alerts = sqlx::query_as::<_, Alert>("SELECT * FROM alerts ORDER BY created_at DESC LIMIT 50")
+        .fetch_all(pool.get_ref())
+        .await?;
+    Ok(HttpResponse::Ok().json(alerts))
 }
