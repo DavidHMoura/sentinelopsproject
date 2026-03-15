@@ -13,15 +13,28 @@ impl AsyncIngestor {
         let (tx, mut rx) = mpsc::channel::<Event>(10_000);
 
         tokio::spawn(async move {
-            let mut batch = Vec::with_capacity(100);
-            let mut timer = interval(Duration::from_secs(5));
+            let mut batch: Vec<Event> = Vec::with_capacity(100);
+            let mut timer = interval(Duration::from_secs(3));
 
             loop {
                 tokio::select! {
-                    Some(event) = rx.recv() => {
-                        batch.push(event);
-                        if batch.len() >= 100 {
-                            Self::flush(&pool, &mut batch).await;
+                    maybe_event = rx.recv() => {
+                        match maybe_event {
+                            Some(event) => {
+                                batch.push(event);
+                                if batch.len() >= 100 {
+                                    Self::flush(&pool, &mut batch).await;
+                                }
+                            }
+                            // Channel closed: all senders dropped (server shutting down).
+                            // Flush whatever is in the buffer before exiting.
+                            None => {
+                                if !batch.is_empty() {
+                                    tracing::info!(count = batch.len(), "Graceful shutdown: flushing remaining events");
+                                    Self::flush(&pool, &mut batch).await;
+                                }
+                                break;
+                            }
                         }
                     }
                     _ = timer.tick() => {
@@ -31,6 +44,8 @@ impl AsyncIngestor {
                     }
                 }
             }
+
+            tracing::info!("Ingestor worker shut down cleanly");
         });
 
         Self { tx }
