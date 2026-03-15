@@ -5,4 +5,5 @@ pub mod detection;
 pub mod errors;
 pub mod ingestor;
 pub mod middleware;
+pub mod ml_features;
 pub mod models;

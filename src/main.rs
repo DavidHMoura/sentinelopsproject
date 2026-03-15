@@ -7,6 +7,7 @@ mod detection;
 mod errors;
 mod ingestor;
 mod middleware;
+mod ml_features;
 mod models;
 
 #[actix_web::main]
@@ -35,8 +36,6 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(app_config.clone())
             .app_data(db_pool.clone())
-            .app_data(detection_engine.clone())
-            .app_data(async_ingestor.clone())
             .app_data(detection_engine.clone())
             .app_data(async_ingestor.clone())
             .wrap(middleware::ApiKeyAuth::new(app_config.api_keys.clone()))
