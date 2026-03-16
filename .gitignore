@@ -1,13 +1,6 @@
-# ============================================================
-# Rust / Cargo
-# ============================================================
 /target/
 **/*.rs.bk
 *.pdb
-
-# ============================================================
-# Credenciais e segredos — NUNCA subir
-# ============================================================
 .env
 .env.*
 !.env.example
@@ -20,80 +13,47 @@
 *.jks
 secrets/
 credentials/
-
-# ============================================================
-# sqlx
-# ============================================================
-# Cache de modo offline do sqlx (contém schema do banco)
 .sqlx/
 sqlx-data.json
-
-# ============================================================
-# Logs e dumps
-# ============================================================
 *.log
 logs/
 *.trace
 core
 core.*
 *.dmp
-
-# ============================================================
-# IDEs e editores
-# ============================================================
-# VS Code
 .vscode/
 *.code-workspace
-
-# JetBrains (CLion, IntelliJ, RustRover)
 .idea/
 *.iml
 *.iws
 *.ipr
-
-# Vim / Neovim
 *.swp
 *.swo
 *~
 .netrwhist
-
-# Emacs
 \#*\#
 .\#*
-
-# ============================================================
-# Claude Code
-# ============================================================
 .claude/
-
-# ============================================================
-# Sistema operacional
-# ============================================================
-# macOS
 .DS_Store
 .AppleDouble
 .LSOverride
 ._*
-
-# Linux
 .Trash-*
-
-# Windows
 Thumbs.db
 ehthumbs.db
 desktop.ini
 $RECYCLE.BIN/
-
-# ============================================================
-# Cobertura de testes e benchmarks
-# ============================================================
 lcov.info
 coverage/
 tarpaulin-report.html
 tarpaulin-report.json
 criterion/
-
-# ============================================================
-# Docker (se vier a ser usado)
-# ============================================================
 .docker-data/
+
+# Java / Maven
+sentinelops-control/target/
+sentinelops-control/.mvn/wrapper/maven-wrapper.jar
+*.class
+
+# Generated proto (Java side)
+sentinelops-control/src/main/java/com/sentinelops/grpc/Sentinel*.java
