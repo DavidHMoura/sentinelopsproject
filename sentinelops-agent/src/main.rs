@@ -1,8 +1,14 @@
-// Proto types — generated from proto/sentinel.proto at build time
+mod config;
+
 pub mod sentinel {
     tonic::include_proto!("sentinel");
 }
 
-fn main() {
-    println!("sentinelops-agent stub — tasks 5-8 will wire the full agent");
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+    let _config = config::AgentConfig::from_env()
+        .map_err(|e| anyhow::anyhow!(e))?;
+    tracing::info!("sentinelops-agent starting (stub)");
+    Ok(())
 }
