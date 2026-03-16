@@ -13,6 +13,15 @@ use crate::sentinel::{
 
 pub struct StreamingSession {
     client: IngestionServiceClient<Channel>,
+    stream_task: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl Drop for StreamingSession {
+    fn drop(&mut self) {
+        if let Some(handle) = self.stream_task.take() {
+            handle.abort();
+        }
+    }
 }
 
 impl StreamingSession {
@@ -44,18 +53,21 @@ impl StreamingSession {
 
         Ok(Self {
             client: IngestionServiceClient::new(channel),
+            stream_task: None,
         })
     }
 
     /// Open a client-side streaming RPC.
     /// Returns a Sender — push SecurityEvent values to it.
     /// Dropping the Sender closes the stream; the server responds with StreamSummary.
+    /// The spawned gRPC task handle is stored in `self.stream_task` and will be
+    /// aborted automatically when `StreamingSession` is dropped.
     pub async fn open_stream(&mut self) -> anyhow::Result<mpsc::Sender<SecurityEvent>> {
         let (tx, rx) = mpsc::channel::<SecurityEvent>(1024);
         let stream   = ReceiverStream::new(rx);
         let mut client = self.client.clone();
 
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             match client.stream_events(stream).await {
                 Ok(resp) => {
                     let s = resp.into_inner();
@@ -70,6 +82,7 @@ impl StreamingSession {
             }
         });
 
+        self.stream_task = Some(handle);
         Ok(tx)
     }
 }
@@ -142,7 +155,15 @@ pub async fn run_ingest_loop(
             }
 
             if stream_tx.is_closed() {
-                tracing::warn!("Stream closed by server, reconnecting...");
+                // Critical 2: log events that will be dropped before breaking
+                if !batch.is_empty() {
+                    tracing::warn!(dropped = batch.len(), "Dropping buffered events — stream closed by server");
+                    batch.clear();
+                }
+                // Critical 1: apply backoff before reconnecting (avoid busy-loop)
+                tracing::warn!(backoff_secs = backoff.as_secs(), "Stream closed by server, reconnecting after backoff...");
+                tokio::time::sleep(backoff).await;
+                backoff = (backoff * 2).min(MAX_BACKOFF);
                 break; // break inner loop → reconnect in outer loop
             }
         }
@@ -150,10 +171,13 @@ pub async fn run_ingest_loop(
 }
 
 async fn flush_batch(tx: &mpsc::Sender<SecurityEvent>, batch: &mut Vec<SecurityEvent>) {
+    let total = batch.len();
+    let mut sent = 0usize;
     for event in batch.drain(..) {
         if let Err(e) = tx.send(event).await {
-            tracing::error!(error = %e, "Stream tx closed during flush");
+            tracing::error!(error = %e, dropped = total - sent, "Stream tx closed during flush");
             return;
         }
+        sent += 1;
     }
 }

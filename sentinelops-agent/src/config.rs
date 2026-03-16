@@ -40,6 +40,15 @@ impl AgentConfig {
                     .unwrap_or_else(|_| "unknown-host".to_string())
             });
 
+        let batch_size: usize = env::var("BATCH_SIZE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(500);
+
+        if batch_size < 1 {
+            return Err("BATCH_SIZE must be >= 1".to_string());
+        }
+
         Ok(Self {
             agent_id,
             source_host,
@@ -51,10 +60,7 @@ impl AgentConfig {
                 .unwrap_or_else(|_| "certs/agent.pem".to_string()),
             client_key_path:    env::var("CLIENT_KEY_PATH")
                 .unwrap_or_else(|_| "certs/agent.key".to_string()),
-            batch_size:         env::var("BATCH_SIZE")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(500),
+            batch_size,
             flush_interval_ms:  env::var("FLUSH_INTERVAL_MS")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -124,5 +130,17 @@ mod tests {
         assert!(matches!(config.mode, AgentMode::Subordinate));
         env::remove_var("AGENT_ID");
         env::remove_var("AGENT_MODE");
+    }
+
+    #[test]
+    fn test_batch_size_zero_rejected() {
+        let _g = env_lock().lock().unwrap();
+        env::set_var("AGENT_ID", "test-agent");
+        env::set_var("BATCH_SIZE", "0");
+        let result = AgentConfig::from_env();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("BATCH_SIZE"));
+        env::remove_var("AGENT_ID");
+        env::remove_var("BATCH_SIZE");
     }
 }
