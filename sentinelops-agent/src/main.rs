@@ -1,4 +1,5 @@
 mod config;
+mod collector;
 
 pub mod sentinel {
     tonic::include_proto!("sentinel");
