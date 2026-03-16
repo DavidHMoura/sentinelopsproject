@@ -1,3 +1,7 @@
+[workspace]
+members  = [".", "sentinelops-agent"]
+resolver = "2"
+
 [package]
 name = "sentinelops-rust"
 version = "0.2.0"
