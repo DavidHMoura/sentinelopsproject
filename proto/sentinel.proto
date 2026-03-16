@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package sentinel;
+
+option java_multiple_files  = true;
+option java_package         = "com.sentinelops.grpc";
+option java_outer_classname = "SentinelProto";
+
+service IngestionService {
+  rpc SendEvent (SecurityEvent) returns (EventResponse);
+  rpc StreamEvents (stream SecurityEvent) returns (StreamSummary);
+}
+
+message SecurityEvent {
+  string event_id         = 1;
+  string timestamp        = 2;
+  string event_type       = 3;
+  string source_ip        = 4;
+  bytes  meta_payload     = 5;
+  string agent_id         = 6;
+  string source_host      = 7;
+  uint32 payload_encoding = 8;
+}
+
+message EventResponse {
+  bool   accepted = 1;
+  string message  = 2;
+  string event_id = 3;
+}
+
+message StreamSummary {
+  uint32 accepted_count = 1;
+  uint32 rejected_count = 2;
+  string session_id     = 3;
+}
