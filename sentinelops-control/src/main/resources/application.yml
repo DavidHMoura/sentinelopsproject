@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: sentinelops-control
+  threads:
+    virtual:
+      enabled: true   # Java 21 Virtual Threads (Project Loom) — Spring Boot >= 3.2 required
+
+grpc:
+  server:
+    port: 9090
+    security:
+      enabled: true
+      certificate-chain: classpath:certs/server.pem
+      private-key:       classpath:certs/server.key
+      trust-certificate-collection: classpath:certs/ca.pem
+      client-auth: REQUIRE   # Enforce mTLS — no client cert = UNAUTHENTICATED
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.sentinelops: INFO
+    io.grpc: WARN
