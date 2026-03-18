@@ -54,6 +54,16 @@ criterion/
 sentinelops-control/target/
 sentinelops-control/.mvn/wrapper/maven-wrapper.jar
 *.class
+*.jar
+*.war
+*.ear
+*.hprof
+hs_err_pid*.log
+replay_pid*.log
 
-# Generated proto (Java side)
-sentinelops-control/src/main/java/com/sentinelops/grpc/Sentinel*.java
+# Spring Boot local overrides (never commit local secrets)
+sentinelops-control/src/main/resources/application-local.yml
+sentinelops-control/src/main/resources/application-local.properties
+
+# Generated proto (Java side — generated into target, rule kept for safety)
+sentinelops-control/src/main/java/com/sentinelops/grpc/
