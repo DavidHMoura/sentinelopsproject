@@ -39,7 +39,7 @@ impl StreamingSession {
             .with_context(|| format!("Failed to read client key: {}", config.client_key_path))?;
 
         let tls = ClientTlsConfig::new()
-            .domain_name("sentinelops-control.internal")
+            .domain_name(&config.tls_server_name)
             .ca_certificate(Certificate::from_pem(&ca_pem))
             .identity(Identity::from_pem(&cert_pem, &key_pem));
 
@@ -101,10 +101,7 @@ pub async fn run_ingest_loop(
         tracing::info!(addr = %config.control_plane_addr, "Connecting to Control Plane...");
 
         let mut session = match StreamingSession::connect(&config).await {
-            Ok(s) => {
-                backoff = Duration::from_secs(1); // reset on successful connect
-                s
-            }
+            Ok(s) => s,
             Err(e) => {
                 tracing::error!(error = %e, backoff_secs = backoff.as_secs(), "Connection failed, retrying...");
                 tokio::time::sleep(backoff).await;
@@ -114,9 +111,12 @@ pub async fn run_ingest_loop(
         };
 
         let stream_tx = match session.open_stream().await {
-            Ok(tx) => tx,
+            Ok(tx) => {
+                backoff = Duration::from_secs(1); // reset only after both connect + stream are up
+                tx
+            }
             Err(e) => {
-                tracing::error!(error = %e, "Failed to open stream");
+                tracing::error!(error = %e, backoff_secs = backoff.as_secs(), "Failed to open stream, retrying...");
                 tokio::time::sleep(backoff).await;
                 backoff = (backoff * 2).min(MAX_BACKOFF);
                 continue;

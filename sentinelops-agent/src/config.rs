@@ -12,6 +12,7 @@ pub struct AgentConfig {
     pub agent_id:            String,
     pub source_host:         String,
     pub control_plane_addr:  String,
+    pub tls_server_name:     String,
     pub ca_cert_path:        String,
     pub client_cert_path:    String,
     pub client_key_path:     String,
@@ -54,6 +55,8 @@ impl AgentConfig {
             source_host,
             control_plane_addr: env::var("CONTROL_PLANE_ADDR")
                 .unwrap_or_else(|_| "https://127.0.0.1:9090".to_string()),
+            tls_server_name:    env::var("TLS_SERVER_NAME")
+                .unwrap_or_else(|_| "sentinelops-control.internal".to_string()),
             ca_cert_path:       env::var("CA_CERT_PATH")
                 .unwrap_or_else(|_| "certs/ca.pem".to_string()),
             client_cert_path:   env::var("CLIENT_CERT_PATH")

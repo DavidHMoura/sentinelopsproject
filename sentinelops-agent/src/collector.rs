@@ -45,6 +45,7 @@ mod tests {
             agent_id:           "test-agent-uuid".to_string(),
             source_host:        "test-host".to_string(),
             control_plane_addr: "https://127.0.0.1:9090".to_string(),
+            tls_server_name:    "sentinelops-control.internal".to_string(),
             ca_cert_path:       "certs/ca.pem".to_string(),
             client_cert_path:   "certs/agent.pem".to_string(),
             client_key_path:    "certs/agent.key".to_string(),
