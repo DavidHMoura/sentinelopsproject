@@ -1,4 +1,5 @@
 use tokio::sync::mpsc;
+use crate::config::Config;
 use crate::ml_features::EventFeatureVector;
 use crate::models::Event;
 use sqlx::PgPool;
@@ -9,12 +10,14 @@ pub struct AsyncIngestor {
 }
 
 impl AsyncIngestor {
-    pub fn new(pool: PgPool) -> Self {
-        let (tx, mut rx) = mpsc::channel::<Event>(10_000);
+    pub fn new(pool: PgPool, config: &Config) -> Self {
+        let (tx, mut rx) = mpsc::channel::<Event>(config.ingestor_queue_capacity);
+        let batch_size = config.ingestor_batch_size;
+        let flush_ms = config.ingestor_flush_ms;
 
         tokio::spawn(async move {
-            let mut batch: Vec<Event> = Vec::with_capacity(100);
-            let mut timer = interval(Duration::from_secs(3));
+            let mut batch: Vec<Event> = Vec::with_capacity(batch_size);
+            let mut timer = interval(Duration::from_millis(flush_ms));
 
             loop {
                 tokio::select! {
@@ -22,12 +25,12 @@ impl AsyncIngestor {
                         match maybe_event {
                             Some(event) => {
                                 batch.push(event);
-                                if batch.len() >= 100 {
+                                if batch.len() >= batch_size {
                                     Self::flush(&pool, &mut batch).await;
                                 }
                             }
-                            // Channel closed: all senders dropped (server shutting down).
-                            // Flush whatever is in the buffer before exiting.
+                            // Channel closed: todos os senders caíram (shutdown).
+                            // Flush o buffer restante antes de sair.
                             None => {
                                 if !batch.is_empty() {
                                     tracing::info!(count = batch.len(), "Graceful shutdown: flushing remaining events");
@@ -58,33 +61,54 @@ impl AsyncIngestor {
     }
 
     async fn flush(pool: &PgPool, batch: &mut Vec<Event>) {
+        let batch_len = batch.len();
+
         let mut tx = match pool.begin().await {
             Ok(t) => t,
             Err(e) => {
-                tracing::error!(error = %e, "Failed to begin transaction; dropping batch of {} events", batch.len());
+                // Não temos como persistir estes eventos — log e descarta.
+                // Em produção, considere uma dead-letter queue.
+                tracing::error!(
+                    error = %e,
+                    dropped = batch_len,
+                    "Failed to begin transaction; dropping batch"
+                );
                 batch.clear();
                 return;
             }
         };
 
-        for event in batch.drain(..) {
-            // Build feature vector before event fields are consumed by bind().
-            let fv = EventFeatureVector::from_event(&event);
+        // Pre-computa feature vectors antes de consumir os eventos com drain.
+        let events: Vec<Event> = batch.drain(..).collect();
 
-            if let Err(e) = sqlx::query(
+        for event in &events {
+            let fv = EventFeatureVector::from_event(event);
+
+            let event_ok = sqlx::query(
                 "INSERT INTO events (id, ts, event_type, source_ip, actor, meta)
                  VALUES ($1, $2, $3, $4, $5, $6)",
             )
             .bind(event.id)
             .bind(event.ts)
-            .bind(event.event_type)
-            .bind(event.source_ip)
-            .bind(event.actor)
-            .bind(event.meta)
+            .bind(&event.event_type)
+            .bind(&event.source_ip)
+            .bind(&event.actor)
+            .bind(&event.meta)
             .execute(&mut *tx)
-            .await
-            {
-                tracing::error!(error = %e, event_id = %fv.event_id, "Failed to insert event");
+            .await;
+
+            if let Err(e) = event_ok {
+                tracing::error!(
+                    error = %e,
+                    event_id = %event.id,
+                    batch_size = batch_len,
+                    "INSERT failed — rolling back entire batch"
+                );
+                // Rollback explícito para não commitar dados parciais.
+                if let Err(rb_err) = tx.rollback().await {
+                    tracing::error!(error = %rb_err, "Rollback also failed");
+                }
+                return;
             }
 
             if let Err(e) = sqlx::query(
@@ -101,12 +125,22 @@ impl AsyncIngestor {
             .execute(&mut *tx)
             .await
             {
-                tracing::error!(error = %e, event_id = %fv.event_id, "Failed to insert ml feature vector");
+                tracing::error!(
+                    error = %e,
+                    event_id = %fv.event_id,
+                    "ML feature INSERT failed — rolling back entire batch"
+                );
+                if let Err(rb_err) = tx.rollback().await {
+                    tracing::error!(error = %rb_err, "Rollback also failed");
+                }
+                return;
             }
         }
 
         if let Err(e) = tx.commit().await {
-            tracing::error!(error = %e, "Failed to commit batch");
+            tracing::error!(error = %e, batch_size = batch_len, "Failed to commit batch — data lost");
+        } else {
+            tracing::debug!(count = batch_len, "Batch committed successfully");
         }
     }
 }

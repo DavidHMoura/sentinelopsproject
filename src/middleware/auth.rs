@@ -5,6 +5,7 @@ use actix_web::{
 };
 use futures_util::future::LocalBoxFuture;
 use std::{
+    collections::HashSet,
     future::{ready, Ready},
     rc::Rc,
 };
@@ -12,13 +13,13 @@ use std::{
 use crate::errors::SentinelError;
 
 pub struct ApiKeyAuth {
-    valid_keys: Rc<Vec<String>>,
+    valid_keys: Rc<HashSet<String>>,
 }
 
 impl ApiKeyAuth {
     pub fn new(keys: Vec<String>) -> Self {
         Self {
-            valid_keys: Rc::new(keys),
+            valid_keys: Rc::new(keys.into_iter().collect()),
         }
     }
 }
@@ -45,7 +46,7 @@ where
 
 pub struct ApiKeyAuthMiddleware<S> {
     service: Rc<S>,
-    valid_keys: Rc<Vec<String>>,
+    valid_keys: Rc<HashSet<String>>,
 }
 
 impl<S, B> Service<ServiceRequest> for ApiKeyAuthMiddleware<S>
@@ -71,15 +72,17 @@ where
                 .and_then(|h| h.to_str().ok())
                 .unwrap_or("");
 
-            if !valid_keys.contains(&api_key.to_string()) {
+            if !valid_keys.contains(api_key) {
+                // Log apenas o IP remoto (não o valor da chave) para evitar
+                // vazar tentativas de chave em logs.
                 tracing::warn!(
-                    "Authentication failed from {}",
-                    req.connection_info().realip_remote_addr().unwrap_or("unknown")
+                    remote = req.connection_info().realip_remote_addr().unwrap_or("unknown"),
+                    "Authentication failed"
                 );
 
                 let error = SentinelError::AuthError("Invalid or missing API key".to_string());
                 let (request, _pl) = req.into_parts();
-                
+
                 return Ok(ServiceResponse::new(
                     request,
                     HttpResponse::Unauthorized()

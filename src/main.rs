@@ -16,9 +16,13 @@ async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt::init();
 
     let config = config::Config::from_env().expect("Failed to load configuration");
-    let pool = db::create_pool(&config.database_url)
-        .await
-        .expect("Failed to create database pool");
+    let pool = db::create_pool(
+        &config.database_url,
+        config.db_max_connections,
+        config.db_min_connections,
+    )
+    .await
+    .expect("Failed to create database pool");
 
     sqlx::migrate!("./migrations")
         .run(&pool)
@@ -26,11 +30,16 @@ async fn main() -> std::io::Result<()> {
         .expect("Failed to run database migrations");
 
     let detection_engine = web::Data::new(detection::DetectionEngine::new());
-    let async_ingestor = web::Data::new(ingestor::AsyncIngestor::new(pool.clone()));
+    let async_ingestor = web::Data::new(ingestor::AsyncIngestor::new(pool.clone(), &config));
     let app_config = web::Data::new(config.clone());
     let db_pool = web::Data::new(pool);
 
-    tracing::info!("Starting SentinelOps v0.3.0 Ultra on {}:{}", config.server_host, config.server_port);
+    tracing::info!(
+        "Starting SentinelOps v{} on {}:{}",
+        env!("CARGO_PKG_VERSION"),
+        config.server_host,
+        config.server_port,
+    );
 
     HttpServer::new(move || {
         App::new()
@@ -46,7 +55,7 @@ async fn main() -> std::io::Result<()> {
                     .service(api::list_alerts)
             )
     })
-    .bind((config.server_host, config.server_port))?
+    .bind((config.server_host.as_str(), config.server_port))?
     .run()
     .await
 }
