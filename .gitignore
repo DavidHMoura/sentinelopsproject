@@ -65,5 +65,6 @@ replay_pid*.log
 sentinelops-control/src/main/resources/application-local.yml
 sentinelops-control/src/main/resources/application-local.properties
 
-# Generated proto (Java side — generated into target, rule kept for safety)
-sentinelops-control/src/main/java/com/sentinelops/grpc/
+# Generated proto (Java side — only ignore generated stubs, not hand-written code)
+sentinelops-control/src/main/java/com/sentinelops/grpc/*Grpc.java
+sentinelops-control/src/main/java/com/sentinelops/grpc/SecurityEventProto.java
