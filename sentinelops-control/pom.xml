@@ -105,10 +105,12 @@
         <artifactId>spring-boot-maven-plugin</artifactId>
       </plugin>
 
-      <!-- Allow Mockito/Byte Buddy inline mocks on Java > 23 -->
+      <!-- Allow Mockito/Byte Buddy inline mocks on Java > 23.
+           Version pinned so BOM upgrades don't silently drop the argLine. -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
         <configuration>
           <argLine>-Dnet.bytebuddy.experimental=true</argLine>
         </configuration>

@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 
 import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLSession;
-import java.security.Principal;
 import java.security.cert.Certificate;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -65,8 +64,6 @@ class AgentIdentityInterceptorTest {
 
     private SSLSession mockSslSession(String cn) throws SSLPeerUnverifiedException {
         SSLSession session = mock(SSLSession.class);
-        Principal principal = mock(Principal.class);
-        when(principal.getName()).thenReturn("CN=" + cn + ",O=SentinelOps,C=BR");
 
         java.security.cert.X509Certificate cert = mock(java.security.cert.X509Certificate.class);
         javax.security.auth.x500.X500Principal x500 = new javax.security.auth.x500.X500Principal("CN=" + cn);
