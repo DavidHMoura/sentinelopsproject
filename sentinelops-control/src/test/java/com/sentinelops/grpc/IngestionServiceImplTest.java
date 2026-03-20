@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -59,6 +60,21 @@ class IngestionServiceImplTest {
     }
 
     // ── Unary ─────────────────────────────────────────────────────────────────
+
+    @Test
+    void sendEvent_whenAgentIdMixedCase_isNormalisedAndAccepted() {
+        SecurityEvent event = SecurityEvent.newBuilder()
+            .setEventId("evt-003")
+            .setAgentId("TEST-AGENT-UUID")   // mixed-case — must be normalised before comparison
+            .setEventType("auth.login.failed")
+            .setSourceIp("10.0.0.1")
+            .build();
+
+        EventResponse response = blockingStub.sendEvent(event);
+
+        assertTrue(response.getAccepted(), "Mixed-case agent_id matching cert CN should be accepted");
+        assertEquals("evt-003", response.getEventId());
+    }
 
     @Test
     void sendEvent_whenAgentIdMatchesCert_returnsAccepted() {
@@ -121,5 +137,25 @@ class IngestionServiceImplTest {
         assertEquals(2, summary.getAcceptedCount());
         assertEquals(1, summary.getRejectedCount());
         assertFalse(summary.getSessionId().isEmpty());
+    }
+
+    @Test
+    void streamEvents_onClientError_serverPropagatesError() throws InterruptedException {
+        CountDownLatch done = new CountDownLatch(1);
+        AtomicBoolean errorReceived = new AtomicBoolean(false);
+
+        StreamObserver<SecurityEvent> requestObserver = asyncStub.streamEvents(
+            new StreamObserver<StreamSummary>() {
+                @Override public void onNext(StreamSummary s)  {}
+                @Override public void onError(Throwable t)     { errorReceived.set(true); done.countDown(); }
+                @Override public void onCompleted()            { done.countDown(); }
+            }
+        );
+
+        // Cancel the stream from the client side — simulates a network failure
+        requestObserver.onError(new RuntimeException("simulated network failure"));
+
+        assertTrue(done.await(3, TimeUnit.SECONDS), "Stream did not terminate in time after error");
+        assertTrue(errorReceived.get(), "Response observer must receive onError when stream fails");
     }
 }

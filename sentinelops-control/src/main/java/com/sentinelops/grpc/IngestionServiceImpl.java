@@ -26,7 +26,9 @@ public class IngestionServiceImpl extends IngestionServiceGrpc.IngestionServiceI
     public void sendEvent(SecurityEvent req, StreamObserver<EventResponse> out) {
         String certCN = AgentIdentityInterceptor.CERT_CN.get();
 
-        if (!req.getAgentId().equals(certCN)) {
+        // Normalise to lowercase — CERT_CN já vem lowercase do AgentIdentityInterceptor;
+        // agent_id no payload pode vir em qualquer casing vindo do agente.
+        if (!req.getAgentId().toLowerCase().equals(certCN)) {
             log.warn("Zero Trust violation [unary]: payload agent_id='{}' cert CN='{}'",
                      req.getAgentId(), certCN);
             out.onNext(EventResponse.newBuilder()
@@ -65,7 +67,7 @@ public class IngestionServiceImpl extends IngestionServiceGrpc.IngestionServiceI
 
             @Override
             public void onNext(SecurityEvent event) {
-                if (!event.getAgentId().equals(certCN)) {
+                if (!event.getAgentId().toLowerCase().equals(certCN)) {
                     log.warn("Zero Trust violation [stream] session={}: payload agent_id='{}' cert CN='{}'",
                              sessionId, event.getAgentId(), certCN);
                     rejected.incrementAndGet();
@@ -79,6 +81,9 @@ public class IngestionServiceImpl extends IngestionServiceGrpc.IngestionServiceI
             @Override
             public void onError(Throwable t) {
                 log.error("[STREAM] error session={} agent={}: {}", sessionId, certCN, t.getMessage());
+                // Propaga o erro para o response observer — sem isso o gRPC runtime
+                // mantém o observer em estado pendente causando resource leak.
+                out.onError(t);
             }
 
             @Override
