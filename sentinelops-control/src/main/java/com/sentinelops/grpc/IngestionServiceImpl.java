@@ -1,5 +1,6 @@
 package com.sentinelops.grpc;
 
+import com.sentinelops.application.port.EventPublisher;
 import io.grpc.stub.StreamObserver;
 import net.devh.boot.grpc.server.service.GrpcService;
 import org.slf4j.Logger;
@@ -14,11 +15,20 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Zero Trust contract: the agent_id field in every SecurityEvent MUST match the
  * cert CN stored in the gRPC Context by AgentIdentityInterceptor. Mismatches are
  * logged and counted as rejected, never silently passed.
+ *
+ * Eventos validados são publicados via EventPublisher (port) — desacoplados
+ * de qualquer detalhe de broker (Kafka, HTTP, etc.).
  */
 @GrpcService
 public class IngestionServiceImpl extends IngestionServiceGrpc.IngestionServiceImplBase {
 
     private static final Logger log = LoggerFactory.getLogger(IngestionServiceImpl.class);
+
+    private final EventPublisher eventPublisher;
+
+    public IngestionServiceImpl(EventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
 
     // ── Unary ─────────────────────────────────────────────────────────────────
 
@@ -26,8 +36,6 @@ public class IngestionServiceImpl extends IngestionServiceGrpc.IngestionServiceI
     public void sendEvent(SecurityEvent req, StreamObserver<EventResponse> out) {
         String certCN = AgentIdentityInterceptor.CERT_CN.get();
 
-        // Normalise to lowercase — CERT_CN já vem lowercase do AgentIdentityInterceptor;
-        // agent_id no payload pode vir em qualquer casing vindo do agente.
         if (!req.getAgentId().toLowerCase().equals(certCN)) {
             log.warn("Zero Trust violation [unary]: payload agent_id='{}' cert CN='{}'",
                      req.getAgentId(), certCN);
@@ -42,7 +50,7 @@ public class IngestionServiceImpl extends IngestionServiceGrpc.IngestionServiceI
 
         log.info("[UNARY] type={} agent={} event={}", req.getEventType(), req.getAgentId(), req.getEventId());
 
-        // TODO: publish to Kafka / persist to PostgreSQL
+        eventPublisher.publish(req, certCN);
 
         out.onNext(EventResponse.newBuilder()
             .setAccepted(true)
@@ -74,15 +82,13 @@ public class IngestionServiceImpl extends IngestionServiceGrpc.IngestionServiceI
                     return;
                 }
 
-                // TODO: publish to Kafka / persist to PostgreSQL
+                eventPublisher.publish(event, certCN);
                 accepted.incrementAndGet();
             }
 
             @Override
             public void onError(Throwable t) {
                 log.error("[STREAM] error session={} agent={}: {}", sessionId, certCN, t.getMessage());
-                // Propaga o erro para o response observer — sem isso o gRPC runtime
-                // mantém o observer em estado pendente causando resource leak.
                 out.onError(t);
             }
 

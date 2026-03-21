@@ -1,5 +1,6 @@
 package com.sentinelops.grpc;
 
+import com.sentinelops.application.port.EventPublisher;
 import io.grpc.*;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.inprocess.InProcessServerBuilder;
@@ -23,6 +24,7 @@ class IngestionServiceImplTest {
     private ManagedChannel channel;
     private IngestionServiceGrpc.IngestionServiceStub asyncStub;
     private IngestionServiceGrpc.IngestionServiceBlockingStub blockingStub;
+    private final EventPublisher noOpPublisher = (event, cn) -> {};
 
     /** Sets up an in-process gRPC server with CERT_CN injected via Context interceptor. */
     @BeforeEach
@@ -43,7 +45,7 @@ class IngestionServiceImplTest {
 
         inProcessServer = InProcessServerBuilder.forName(serverName)
             .intercept(cnInjector)
-            .addService(new IngestionServiceImpl())
+            .addService(new IngestionServiceImpl(noOpPublisher))
             .build()
             .start();
 
