@@ -5,6 +5,8 @@ use uuid::Uuid;
 fn test_config() -> Config {
     Config {
         database_url: "postgres://testuser:testpass@localhost:5432/testdb".to_string(),
+        db_max_connections: 20,
+        db_min_connections: 2,
         auth_max_attempts: 3,
         auth_window_seconds: 300,
         port_scan_max_ports: 20,
@@ -12,6 +14,9 @@ fn test_config() -> Config {
         api_keys: vec!["test-key".to_string()],
         server_host: "127.0.0.1".to_string(),
         server_port: 8000,
+        ingestor_queue_capacity: 1000,
+        ingestor_batch_size: 100,
+        ingestor_flush_ms: 3000,
     }
 }
 
