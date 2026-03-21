@@ -1,89 +1,125 @@
-# SentinelOps Rust
+# SentinelOps
 
-High-performance security event ingestion, threat detection, and automated alerting system built in Rust.
+Sistema de detecção de intrusão (IDS) com arquitetura event-driven, construído com Rust e Java.
 
-## Version 0.2.0
-
-This release adds production-ready security and reliability features:
-
-- API Key Authentication
-- Rate Limiting
-- Robust Error Handling
-- Input Validation
-- Structured Logging with tracing
-- Comprehensive Test Coverage
-
-## Features
-
-### Core Capabilities
-- REST API for high-throughput event ingestion
-- Real-time threat detection engine
-- Alert deduplication via fingerprinting
-- Async PostgreSQL operations
-
-### Security (v0.2.0)
-- Middleware-based API key authentication
-- Rate limiting (2 req/s, burst 10)
-- Input validation with schema enforcement
-- Structured audit logging
-
-## Architecture
+## Arquitetura
 
 ```
-Client -> Actix-web Server -> PostgreSQL
-              |
-              v
-         Detection Engine
-              |
-              v
-            Alerts
+┌─────────────────────────────────────────────────────────────────┐
+│                         Agentes (Rust)                          │
+│            Coletam eventos do OS e enviam via gRPC/mTLS         │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ gRPC + mTLS (Zero Trust)
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│               Control Plane (Java · Spring Boot 21)             │
+│   Valida identidade do agente (cert CN) → publica no Kafka      │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ Kafka (Redpanda) · tópico events.raw
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│               Detection Engine (Rust · Actix-Web)               │
+│   Consome events.raw → detecta ameaças → persiste no PostgreSQL │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+                      PostgreSQL
+                  (eventos · alertas · ML features)
 ```
 
-## Installation
+### Componentes
 
-### Prerequisites
+| Componente | Stack | Responsabilidade |
+|---|---|---|
+| `sentinelops-agent` | Rust + tonic | Coleta eventos do OS, envia via gRPC/mTLS |
+| `sentinelops-control` | Java 21 + Spring Boot + gRPC | Valida agentes (Zero Trust), publica no Kafka |
+| `sentinelops-rust` | Rust + Actix-Web | REST API, Detection Engine, persistência PostgreSQL |
+| `proto/` | Protobuf | Contrato gRPC compartilhado |
+| `migrations/` | SQLx | Schema PostgreSQL versionado |
 
+---
+
+## Início Rápido
+
+### Pré-requisitos
+
+- Docker + Docker Compose v2
 - Rust 1.75+
-- PostgreSQL 14+
+- Java 21+, Maven 3.9+
 
-### Database Setup
-
-```sql
-CREATE DATABASE sentinelops;
-CREATE USER sentinelops WITH PASSWORD 'sentinelops';
-GRANT ALL PRIVILEGES ON DATABASE sentinelops TO sentinelops;
-```
-
-### Configuration
+### 1. Subir a infraestrutura
 
 ```bash
-cp .env.example .env
-# Edit .env and set your API keys
+cp .env.example .env          # credenciais dev (não commitar o .env)
+docker compose up -d
+docker compose ps             # aguardar postgres e redpanda ficarem healthy
 ```
 
-### Run
+Portas expostas:
+
+| Porta | Serviço |
+|---|---|
+| `5432` | PostgreSQL |
+| `19092` | Kafka API (host → Redpanda) |
+| `9644` | Redpanda Admin API |
+| `8082` | Pandaproxy REST |
+
+### 2. Executar os testes
 
 ```bash
+# Rust (Detection Engine + Agent)
+cargo test
+
+# Java (Control Plane)
+cd sentinelops-control && mvn test
+```
+
+### 3. Rodar o servidor HTTP
+
+```bash
+# Requer DATABASE_URL e API_KEYS no .env
 cargo run
 ```
 
-## API Usage
+---
 
-All requests require X-API-Key header:
+## Variáveis de Ambiente
 
-```bash
-curl -H "X-API-Key: your-key" http://localhost:8000/api/events
-```
+### Rust HTTP Server (`sentinelops-rust`)
 
-### Endpoints
+| Variável | Descrição | Padrão |
+|---|---|---|
+| `DATABASE_URL` | PostgreSQL connection string | **Obrigatório** |
+| `API_KEYS` | Chaves de API separadas por vírgula | **Obrigatório** |
+| `SERVER_HOST` | Endereço de bind | `127.0.0.1` |
+| `SERVER_PORT` | Porta | `8000` |
+| `AUTH_MAX_ATTEMPTS` | Threshold brute-force | `10` |
+| `AUTH_WINDOW_SECONDS` | Janela de detecção (s) | `300` |
+| `PORT_SCAN_MAX_PORTS` | Threshold port-scan | `20` |
+| `PORT_SCAN_WINDOW_SECONDS` | Janela de detecção port-scan (s) | `10` |
+| `INGESTOR_BATCH_SIZE` | Eventos por batch no DB | `100` |
+| `INGESTOR_FLUSH_MS` | Intervalo de flush (ms) | `3000` |
 
-**POST /api/events/ingest** - Ingest security event
+### Control Plane (`sentinelops-control`)
+
+| Variável | Descrição | Padrão |
+|---|---|---|
+| `KAFKA_BOOTSTRAP_SERVERS` | Endereço do broker Kafka | `localhost:19092` |
+
+---
+
+## API REST
+
+Todas as requisições requerem o header `X-API-Key`.
+
+### POST /api/events/ingest
+
 ```bash
 curl -X POST http://localhost:8000/api/events/ingest \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-key" \
   -d '{
-    "ts": "2026-03-08T22:00:00Z",
+    "ts": "2026-03-21T17:00:00Z",
     "event_type": "auth.login.failed",
     "source_ip": "192.168.1.100",
     "actor": "user@example.com",
@@ -91,98 +127,88 @@ curl -X POST http://localhost:8000/api/events/ingest \
   }'
 ```
 
-**GET /api/events?limit=50** - List recent events
-
-**GET /api/alerts?limit=50** - List alerts
-
-**GET /api/alerts/{id}** - Get specific alert
-
-## Configuration
-
-Environment variables (.env file):
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| DATABASE_URL | PostgreSQL connection string | postgres://sentinelops:sentinelops@localhost:5432/sentinelops |
-| API_KEYS | Comma-separated list of valid keys | Required |
-| SERVER_HOST | Bind address | 127.0.0.1 |
-| SERVER_PORT | Port number | 8000 |
-| AUTH_MAX_ATTEMPTS | Brute-force threshold | 10 |
-| AUTH_WINDOW_SECONDS | Detection time window | 300 |
-| RUST_LOG | Log level | info |
-
-## Detection Rules
-
-### Brute-Force Detection
-
-Monitors auth.login.failed events and generates alerts when attempts from a single IP exceed the configured threshold within the time window.
-
-Alert includes:
-- Attempt count
-- Source IP
-- Target actor (if available)
-- Time window
-- Event IDs for investigation
-
-## Testing
+### GET /api/events
 
 ```bash
-# Unit tests
-cargo test
-
-# Integration tests (requires PostgreSQL)
-cargo test --test detection_integration -- --ignored
+curl -H "X-API-Key: your-key" http://localhost:8000/api/events
 ```
 
-## Project Structure
+### GET /api/alerts
 
-```
-src/
-├── main.rs           - Application entry point
-├── api.rs            - REST endpoints
-├── config.rs         - Configuration management
-├── db.rs             - Database pool
-├── detection.rs      - Threat detection logic
-├── models.rs         - Data structures
-├── errors.rs         - Error types
-└── middleware/
-    └── auth.rs       - API key authentication
-
-tests/
-└── detection_integration.rs
-
-migrations/
-└── 20260307_init.sql
+```bash
+curl -H "X-API-Key: your-key" http://localhost:8000/api/alerts
 ```
 
-## Technical Details
+---
 
-### Error Handling
-Uses thiserror for type-safe error propagation. All errors are mapped to appropriate HTTP responses via ResponseError trait.
+## Regras de Detecção
 
-### Logging
-Structured logging with tracing provides rich context for debugging and monitoring. Compatible with standard observability tools.
+| Regra | Evento | Condição | Severidade |
+|---|---|---|---|
+| Brute-force | `auth.login.failed` | ≥ `AUTH_MAX_ATTEMPTS` tentativas na janela | `high` |
+| Port scan | `network.scan` | ≥ `PORT_SCAN_MAX_PORTS` portas distintas na janela | `critical` |
 
-### Validation
-Input validation with validator crate ensures data integrity before processing.
+---
 
-### Rate Limiting
-Per-IP rate limiting via actix-governor prevents abuse and DoS attacks.
+## Zero Trust (mTLS)
 
-## Dependencies
+O Control Plane rejeita qualquer chamada gRPC sem certificado de cliente válido. O `AgentIdentityInterceptor` extrai o CN do certificado e o `IngestionServiceImpl` valida que o campo `agent_id` de cada evento corresponde ao CN — impedindo spoofing mesmo com conexão estabelecida.
 
-- actix-web: Web framework
-- sqlx: Async PostgreSQL client
-- tracing: Structured logging
-- thiserror: Error handling
-- validator: Input validation
-- actix-governor: Rate limiting
+---
 
-## License
+## Estrutura do Repositório
+
+```
+sentinelops/
+├── src/                          # Detection Engine + REST API (Rust)
+│   ├── api.rs
+│   ├── detection.rs
+│   ├── ingestor.rs
+│   ├── ml_features.rs
+│   └── middleware/auth.rs
+├── sentinelops-agent/            # Agente gRPC (Rust)
+│   └── src/
+│       ├── client.rs
+│       └── collector.rs
+├── sentinelops-control/          # Control Plane (Java)
+│   └── src/main/java/com/sentinelops/
+│       ├── application/port/     # Ports (interfaces)
+│       ├── grpc/                 # Handlers gRPC
+│       └── infrastructure/kafka/ # Adapters Kafka
+├── proto/
+│   └── sentinel.proto
+├── migrations/
+├── docker-compose.yml
+└── .env.example
+```
+
+---
+
+## Testes
+
+```
+Java  (sentinelops-control):  10 testes — AgentIdentityInterceptor, IngestionServiceImpl, KafkaEventPublisher
+Rust  (sentinelops-rust):     10 testes — config, models, middleware, detection
+Rust  (sentinelops-agent):     9 testes — config, collector
+Integration:                   2 testes — brute-force threshold, non-auth events
+```
+
+---
+
+## Roadmap
+
+- [ ] Rust Kafka Consumer — fechar o circuito EDA end-to-end
+- [ ] Rate limiting ativo nas rotas REST
+- [ ] Alert routing (webhook / Slack)
+- [ ] Collector real no agente (eBPF / auditd)
+- [ ] Métricas Prometheus
+
+---
+
+## Licença
 
 MIT
 
-## Contact
+## Contato
 
-David Moura
-Project: https://github.com/DavidHMoura/sentinelopsproject
+David Moura — [github.com/DavidHMoura/sentinelopsproject](https://github.com/DavidHMoura/sentinelopsproject)
