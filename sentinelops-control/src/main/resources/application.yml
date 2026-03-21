@@ -28,3 +28,20 @@ logging:
   level:
     com.sentinelops: INFO
     io.grpc: WARN
+
+# ── Kafka / Redpanda ─────────────────────────────────────────────────────────
+spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19092}
+    producer:
+      acks: all                 # persiste em todas as réplicas antes de ACK
+      retries: 3
+      retry-backoff-ms: 1000
+      key-serializer:   org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+# Configuração interna da aplicação
+sentinelops:
+  kafka:
+    topic:
+      events-raw: events.raw
