@@ -70,6 +70,12 @@
       <artifactId>spring-kafka</artifactId>
     </dependency>
 
+    <!-- Jackson: JSON serialisation for KafkaEventPublisher envelope -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+
     <!-- Testing -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
