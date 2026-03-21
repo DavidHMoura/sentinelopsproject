@@ -1,0 +1,94 @@
+# docker-compose.yml
+# Ambiente de desenvolvimento local: Redpanda (Kafka-compatible) + PostgreSQL.
+#
+# SETUP INICIAL:
+#   cp .env.example .env        # credenciais dev (não commitar o .env)
+#   docker compose up -d        # sobe tudo em background
+#
+# Portas expostas (host):
+#   5432   → PostgreSQL
+#   19092  → Kafka API para HOST (Java/Rust/rpk local) — PLAINTEXT_HOST listener
+#   9092   → Kafka API para containers — PLAINTEXT listener (não acessível do host)
+#   9644   → Redpanda Admin API
+#   8082   → Pandaproxy REST
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-sentinelops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentinelops}
+      POSTGRES_DB:       ${POSTGRES_DB:-sentinelops}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sentinelops} -d ${POSTGRES_DB:-sentinelops}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sentinelops-net
+
+  # ── Redpanda (Kafka-compatible broker) ──────────────────────────────────────
+  # Dois listeners Kafka:
+  #   PLAINTEXT      → container-to-container (sentinelops-net, hostname redpanda)
+  #   PLAINTEXT_HOST → host-to-container (localhost:19092, para Java/Rust/rpk local)
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.1
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:19092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092,PLAINTEXT_HOST://localhost:19092
+      - --pandaproxy-addr=0.0.0.0:8082
+      - --advertise-pandaproxy-addr=localhost:8082
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr=redpanda:33145
+      - --mode=dev-container
+      - --default-log-level=warn
+    ports:
+      - "19092:19092"   # Kafka HOST listener
+      - "9644:9644"     # Admin API
+      - "8082:8082"     # Pandaproxy REST
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy.*true'"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 15s
+    networks:
+      - sentinelops-net
+
+  # ── Redpanda Init: cria tópicos (idempotente — seguro re-executar) ───────────
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.1
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        rpk topic create events.raw \
+          --brokers redpanda:9092 \
+          --partitions 3 \
+          --replicas 1 \
+          --topic-config retention.ms=604800000 || true
+        echo "events.raw ready"
+    networks:
+      - sentinelops-net
+
+volumes:
+  postgres_data:
+
+networks:
+  sentinelops-net:
+    driver: bridge
