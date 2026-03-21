@@ -26,7 +26,6 @@ class KafkaEventPublisherTest {
     private KafkaTemplate<String, String> kafkaTemplate;
 
     @Mock
-    @SuppressWarnings("unchecked")
     private SendResult<String, String> sendResult;
 
     private KafkaEventPublisher publisher;
